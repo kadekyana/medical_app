@@ -1,13 +1,13 @@
 name: Build Medical App
 
-# Trigger: Jalan setiap kali ada push ke branch main
+# Trigger: Jalan otomatis setiap ada update di branch main
 on:
   push:
     branches: ["main"]
-  workflow_dispatch: # Supaya bisa di-klik manual tombol "Run"
+  workflow_dispatch: # Tombol manual untuk run ulang jika perlu
 
 jobs:
-  # --- JOB 1: BUILD WINDOWS (.EXE) ---
+  # --- JOB 1: BUILD WINDOWS (PORTABLE) ---
   build-windows:
     runs-on: windows-latest
 
@@ -19,7 +19,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: "stable"
-          # Sesuaikan versi flutter jika perlu, atau biarkan default (latest)
 
       - name: Enable Desktop Support
         run: flutter config --enable-windows-desktop
@@ -27,21 +26,29 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build Windows App
+      - name: Build Windows App (.exe)
         run: flutter build windows --release
 
-      # Karena hasil build Windows adalah FOLDER (bukan 1 file exe), kita zip dulu
+      # --- BAGIAN PENTING: BUNDLING DLL (Agar Portable) ---
+      # Kita copy file mesin C++ dari Windows Server ke dalam folder aplikasi
+      - name: Bundle C++ DLLs
+        run: |
+          Copy-Item "C:\Windows\System32\msvcp140.dll" -Destination "build\windows\x64\runner\Release\"
+          Copy-Item "C:\Windows\System32\vcruntime140.dll" -Destination "build\windows\x64\runner\Release\"
+          Copy-Item "C:\Windows\System32\vcruntime140_1.dll" -Destination "build\windows\x64\runner\Release\"
+
+      # Zip folder yang sudah lengkap dengan DLL
       - name: Compress Build Output
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath medical_app_windows.zip
 
-      - name: Upload Artifact (EXE)
+      - name: Upload Artifact (Windows)
         uses: actions/upload-artifact@v4
         with:
           name: windows-app-release
           path: medical_app_windows.zip
 
-  # --- JOB 2: BUILD MACOS (.APP) ---
+  # --- JOB 2: BUILD MACOS ---
   build-macos:
     runs-on: macos-latest
 
@@ -60,10 +67,10 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build macOS App
+      - name: Build macOS App (.app)
         run: flutter build macos --release
 
-      # macOS apps sebenarnya folder .app, kita zip juga biar mudah download
+      # Zip aplikasi macOS
       - name: Compress App
         run: |
           cd build/macos/Build/Products/Release
