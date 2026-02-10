@@ -1,0 +1,76 @@
+name: Build Medical App
+
+# Trigger: Jalan setiap kali ada push ke branch main
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: # Supaya bisa di-klik manual tombol "Run"
+
+jobs:
+  # --- JOB 1: BUILD WINDOWS (.EXE) ---
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          # Sesuaikan versi flutter jika perlu, atau biarkan default (latest)
+
+      - name: Enable Desktop Support
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Windows App
+        run: flutter build windows --release
+
+      # Karena hasil build Windows adalah FOLDER (bukan 1 file exe), kita zip dulu
+      - name: Compress Build Output
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath medical_app_windows.zip
+
+      - name: Upload Artifact (EXE)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app-release
+          path: medical_app_windows.zip
+
+  # --- JOB 2: BUILD MACOS (.APP) ---
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+
+      - name: Enable Desktop Support
+        run: flutter config --enable-macos-desktop
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build macOS App
+        run: flutter build macos --release
+
+      # macOS apps sebenarnya folder .app, kita zip juga biar mudah download
+      - name: Compress App
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r medical_app_mac.zip medical_app.app
+
+      - name: Upload Artifact (Mac)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app-release
+          path: build/macos/Build/Products/Release/medical_app_mac.zip
