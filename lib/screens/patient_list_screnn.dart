@@ -1,298 +1,419 @@
 import 'package:flutter/material.dart';
 import 'package:medical_app/models/user_model.dart';
 import 'package:medical_app/screens/medical_record_screen.dart';
-import '../db/database_helper.dart';
+import 'package:medical_app/services/api_service.dart';
 import '../models/patient_model.dart';
 import 'add_patient_screen.dart';
 
 class PatientListScreen extends StatefulWidget {
-  final User currentUser;
-  const PatientListScreen({super.key, required this.currentUser});
+  final Users user; // Tambahkan ini
+  const PatientListScreen({super.key, required this.user});
 
   @override
   State<PatientListScreen> createState() => _PatientListScreenState();
 }
 
 class _PatientListScreenState extends State<PatientListScreen> {
-  List<Patient> _allPatients = []; // Data asli
-  List<Patient> _filteredPatients = []; // Data hasil search
-  bool _isLoading = true;
+  List<Patients> _patients = [];
   final TextEditingController _searchController = TextEditingController();
+  bool _isLoading = true;
+
+  // Warna Utama (Biru Medis)
+  final Color _primaryColor = const Color(0xFF1E88E5);
 
   @override
   void initState() {
     super.initState();
-    _refreshPatientList();
+    _fetchPatients();
   }
 
-  void _refreshPatientList() async {
-    final data = await DatabaseHelper().getPatients();
-    setState(() {
-      _allPatients = data.map((e) => Patient.fromMap(e)).toList();
-      _filteredPatients = _allPatients; // Awalnya tampilkan semua
-      _isLoading = false;
-    });
+  void _fetchPatients({String? query}) async {
+    setState(() => _isLoading = true);
+    final data = await ApiService().getPatients(query: query);
+
+    if (mounted) {
+      setState(() {
+        _patients = data;
+        _isLoading = false;
+      });
+    }
   }
 
-  // Logika Pencarian
-  void _filterPatients(String query) {
-    setState(() {
-      if (query.isEmpty) {
-        _filteredPatients = _allPatients;
-      } else {
-        _filteredPatients = _allPatients.where((patient) {
-          return patient.nama.toLowerCase().contains(query.toLowerCase()) ||
-              patient.noRm.toLowerCase().contains(query.toLowerCase());
-        }).toList();
-      }
-    });
+  // LOGIC HAPUS PASIEN
+  void _confirmDelete(Patients patient) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Hapus Pasien"),
+        content: Text(
+          "Apakah anda yakin ingin menghapus data '${patient.nama}'?\n\nPERINGATAN: Semua rekam medis pasien ini juga akan terhapus!",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx); // Tutup dialog
+
+              // Tampilkan Loading Indicator sementara
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Menghapus data...")),
+              );
+
+              bool success = await ApiService().deletePatient(patient.id);
+
+              if (mounted) {
+                if (success) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Pasien berhasil dihapus"),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _fetchPatients(); // Refresh list
+                } else {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Gagal menghapus pasien"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text("Hapus", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Logic Navigasi ke Edit
+  void _navigateToEdit(Patients patient) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddPatientScreen(patient: patient), // Kirim data lama
+      ),
+    );
+    _fetchPatients(); // Refresh setelah kembali dari edit
+  }
+
+  Color _getAvatarColor(String name) {
+    if (name.isEmpty) return Colors.grey;
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+    ];
+    return colors[name.length % colors.length];
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF1F5F9), // Slate 100
       appBar: AppBar(
-        title: const Text("Data Pasien"),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text("Pasien Baru"),
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (c) => const AddPatientScreen()),
-                );
-                _refreshPatientList();
-              },
-            ),
-          ),
-        ],
+        title: const Text(
+          "Data Pasien",
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: _primaryColor,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+          );
+          _fetchPatients();
+        },
+        backgroundColor: _primaryColor,
+        icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
+        label: const Text("Pasien Baru", style: TextStyle(color: Colors.white)),
       ),
       body: Column(
         children: [
-          // --- 1. HEADER PENCARIAN (BARU) ---
+          // 1. HEADER PENCARIAN
           Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
-            child: TextField(
-              controller: _searchController,
-              onChanged: _filterPatients,
-              decoration: InputDecoration(
-                hintText: "Cari nama pasien atau No. RM...",
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _filterPatients('');
-                        },
-                      )
-                    : null,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            decoration: BoxDecoration(
+              color: _primaryColor,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
               ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      hintText: "Cari Nama atau No RM...",
+                      hintStyle: TextStyle(color: Colors.grey.shade400),
+                      prefixIcon: Icon(Icons.search, color: _primaryColor),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.grey),
+                              onPressed: () {
+                                _searchController.clear();
+                                _fetchPatients();
+                              },
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                    onSubmitted: (val) => _fetchPatients(query: val),
+                    onChanged: (val) {
+                      if (val.isEmpty) _fetchPatients();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
           ),
 
-          // --- 2. TABEL DATA ---
+          // 2. LIST PASIEN
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredPatients.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                : _patients.isEmpty
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: () async => _fetchPatients(),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _patients.length,
+                      itemBuilder: (context, index) {
+                        final patient = _patients[index];
+                        return _buildPatientCard(patient);
+                      },
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPatientCard(Patients patient) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shadowColor: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          // Default Tap: Ke Rekam Medis
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  MedicalRecordScreen(patient: patient, user: widget.user),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Row(
+            children: [
+              // AVATAR
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: _getAvatarColor(patient.nama).withOpacity(0.1),
+                child: Text(
+                  patient.nama.isNotEmpty ? patient.nama[0].toUpperCase() : "?",
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: _getAvatarColor(patient.nama),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // INFO TEXT
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      patient.nama,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
                       children: [
-                        Icon(
-                          Icons.person_off,
-                          size: 64,
-                          color: Colors.grey[300],
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            "RM: ${patient.noRm}",
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          "Data tidak ditemukan",
-                          style: TextStyle(color: Colors.grey[500]),
+                        const SizedBox(width: 8),
+                        Icon(
+                          patient.jenisKelamin == 'L'
+                              ? Icons.male
+                              : Icons.female,
+                          size: 14,
+                          color: Colors.grey,
                         ),
                       ],
                     ),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: Card(
-                        // Bungkus tabel dengan Card biar rapi
-                        child: DataTable(
-                          headingRowColor: MaterialStateProperty.all(
-                            Colors.teal.shade50,
-                          ),
-                          columnSpacing: 20,
-                          dataRowHeight: 60,
-                          columns: const [
-                            DataColumn(
-                              label: Text(
-                                "No. RM",
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                "Nama Pasien",
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                "L/P",
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                "Umur/Tgl Lahir",
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                "Status",
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            DataColumn(
-                              label: Text(
-                                "Aksi",
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                          rows: _filteredPatients.map((patient) {
-                            bool hasAllergy =
-                                patient.alergiObat.isNotEmpty &&
-                                patient.alergiObat != '-';
-                            return DataRow(
-                              cells: [
-                                DataCell(
-                                  Text(
-                                    patient.noRm,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.teal,
-                                    ),
-                                  ),
-                                ),
-                                DataCell(
-                                  Text(
-                                    patient.nama,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: patient.jenisKelamin == 'L'
-                                          ? Colors.blue.shade50
-                                          : Colors.pink.shade50,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      patient.jenisKelamin,
-                                      style: TextStyle(
-                                        color: patient.jenisKelamin == 'L'
-                                            ? Colors.blue
-                                            : Colors.pink,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                DataCell(Text(patient.tanggalLahir)),
-                                DataCell(
-                                  hasAllergy
-                                      ? Chip(
-                                          label: Text(
-                                            "Alergi: ${patient.alergiObat}",
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          backgroundColor: Colors.redAccent,
-                                          padding: EdgeInsets.zero,
-                                        )
-                                      : const Chip(
-                                          label: Text(
-                                            "Normal",
-                                            style: TextStyle(fontSize: 10),
-                                          ),
-                                          backgroundColor: Colors.greenAccent,
-                                        ),
-                                ),
-                                DataCell(
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.edit_outlined,
-                                          color: Colors.orange,
-                                        ),
-                                        tooltip: "Edit Data",
-                                        onPressed: () async {
-                                          await Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (c) => AddPatientScreen(
-                                                patient: patient,
-                                              ),
-                                            ),
-                                          );
-                                          _refreshPatientList();
-                                        },
-                                      ),
-                                      const SizedBox(width: 8),
-                                      ElevatedButton.icon(
-                                        icon: const Icon(
-                                          Icons.medical_services_outlined,
-                                          size: 16,
-                                        ),
-                                        label: const Text("Periksa"),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.teal,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
-                                        ),
-                                        onPressed: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (c) =>
-                                                  MedicalRecordScreen(
-                                                    patient: patient,
-                                                    doctor: widget.currentUser,
-                                                  ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            );
-                          }).toList(),
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      patient.alamat,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
                       ),
                     ),
+                  ],
+                ),
+              ),
+
+              // MENU ACTIONS (Edit & Delete)
+              PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert, color: Colors.grey.shade400),
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    _navigateToEdit(patient);
+                  } else if (value == 'delete') {
+                    _confirmDelete(patient);
+                  } else if (value == 'record') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MedicalRecordScreen(
+                          patient: patient,
+                          user: widget.user,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  const PopupMenuItem<String>(
+                    value: 'record',
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.assignment_ind_outlined,
+                        color: Colors.green,
+                      ),
+                      title: Text('Rekam Medis'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   ),
+                  const PopupMenuItem<String>(
+                    value: 'edit',
+                    child: ListTile(
+                      leading: Icon(Icons.edit_outlined, color: Colors.blue),
+                      title: Text('Edit Data'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline, color: Colors.red),
+                      title: Text('Hapus Pasien'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.person_off_rounded,
+              size: 60,
+              color: Colors.blue.shade200,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "Pasien tidak ditemukan",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Coba kata kunci lain",
+            style: TextStyle(color: Colors.grey.shade400),
           ),
         ],
       ),

@@ -1,49 +1,68 @@
-class Patient {
-  final int? id;
-  final String noRm; // Nomor Rekam Medis
-  final String nama;
-  final String alamat;
-  final String tanggalLahir;
-  final String jenisKelamin; // 'L' atau 'P'
-  final String alergiObat; // Penting!
-  final String createdAt;
+import 'dart:convert';
+import 'package:intl/intl.dart';
 
-  Patient({
-    this.id,
-    required this.noRm,
+List<Patients> patientsFromJson(String str) =>
+    List<Patients>.from(json.decode(str).map((x) => Patients.fromJson(x)));
+
+String patientsToJson(List<Patients> data) =>
+    json.encode(List<dynamic>.from(data.map((x) => x.toJson())));
+
+class Patients {
+  int id;
+  String? noRm; // Boleh null
+  String nama;
+  String alamat;
+  DateTime tanggalLahir;
+  String jenisKelamin;
+  String alergiObat;
+  DateTime? createdAt; // Boleh null (dihandle server)
+  DateTime? updatedAt;
+
+  Patients({
+    required this.id,
+    this.noRm,
     required this.nama,
     required this.alamat,
     required this.tanggalLahir,
     required this.jenisKelamin,
     required this.alergiObat,
-    required this.createdAt,
+    this.createdAt,
+    this.updatedAt,
   });
 
-  // Dari Database ke Dart
-  factory Patient.fromMap(Map<String, dynamic> map) {
-    return Patient(
-      id: map['id'],
-      noRm: map['no_rm'],
-      nama: map['nama'],
-      alamat: map['alamat'],
-      tanggalLahir: map['tanggal_lahir'],
-      jenisKelamin: map['jenis_kelamin'],
-      alergiObat: map['alergi_obat'],
-      createdAt: map['created_at'],
-    );
-  }
+  factory Patients.fromJson(Map<String, dynamic> json) => Patients(
+    id: json["id"] ?? 0,
+    noRm: json["no_rm"] ?? "",
+    nama: json["nama"] ?? "",
+    alamat: json["alamat"] ?? "",
+    // Handle parsing tanggal dengan aman
+    tanggalLahir: json["tanggal_lahir"] != null
+        ? DateTime.tryParse(json["tanggal_lahir"]) ?? DateTime.now()
+        : DateTime.now(),
+    jenisKelamin: json["jenis_kelamin"] ?? "L",
+    alergiObat: json["alergi_obat"] ?? "-",
+    createdAt: json["created_at"] != null
+        ? DateTime.tryParse(json["created_at"])
+        : null,
+    updatedAt: json["updated_at"] != null
+        ? DateTime.tryParse(json["updated_at"])
+        : null,
+  );
 
-  // Dari Dart ke Database
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
+    // Format tanggal ke YYYY-MM-DD string untuk API Golang
+    String tglLahirString = DateFormat('yyyy-MM-dd').format(tanggalLahir);
+
     return {
-      'id': id,
-      'no_rm': noRm,
-      'nama': nama,
-      'alamat': alamat,
-      'tanggal_lahir': tanggalLahir,
-      'jenis_kelamin': jenisKelamin,
-      'alergi_obat': alergiObat,
-      'created_at': createdAt,
+      // Jangan kirim ID jika 0 (create), tapi kirim jika update
+      if (id != 0) "id": id,
+      "no_rm": noRm ?? "",
+      "nama": nama,
+      "alamat": alamat,
+      "tanggal_lahir": tglLahirString, // Kirim String, bukan DateTime obj
+      "jenis_kelamin": jenisKelamin,
+      "alergi_obat": alergiObat,
+      // Jangan kirim created_at/updated_at dari client, biarkan server handle
     };
   }
 }

@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
-import '../db/database_helper.dart';
-import '../models/patient_model.dart';
-import '../models/user_model.dart';
+import 'package:intl/intl.dart';
+import 'package:medical_app/models/patient_model.dart';
+import 'package:medical_app/models/user_model.dart'; // Import User Model
+import 'package:medical_app/services/api_service.dart';
 import '../models/medical_record_model.dart';
 
 class MedicalRecordScreen extends StatefulWidget {
-  final Patient patient;
-  final User doctor; // User yang sedang login
+  final Patients patient;
+  final Users user; // TERIMA DATA USER YANG LOGIN
 
   const MedicalRecordScreen({
     super.key,
     required this.patient,
-    required this.doctor,
+    required this.user,
   });
 
   @override
@@ -19,404 +20,266 @@ class MedicalRecordScreen extends StatefulWidget {
 }
 
 class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
-  final _anamnesaController = TextEditingController();
-  final _terapiController = TextEditingController();
-  List<MedicalRecord> _records = [];
+  List<MedicalReports> _records = [];
+  bool _isLoading = true;
+
+  final Color _primaryColor = const Color(0xFF1E88E5);
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _loadRecords();
   }
 
-  void _loadHistory() async {
-    final data = await DatabaseHelper().getMedicalRecordsByPatient(
-      widget.patient.id!,
-    );
-    setState(() {
-      _records = data.map((e) => MedicalRecord.fromMap(e)).toList();
-    });
+  Future<void> _loadRecords() async {
+    setState(() => _isLoading = true);
+    final data = await ApiService().getRecords(widget.patient.id);
+    if (mounted) {
+      setState(() {
+        _records = data;
+        _isLoading = false;
+      });
+    }
   }
 
-  void _saveRecord() async {
-    if (_anamnesaController.text.isEmpty) return;
+  void _showAddRecordModal() {
+    final anamnesaController = TextEditingController();
+    final terapiController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isSaving = false;
 
-    String today = DateTime.now().toString().split(' ')[0];
-
-    MedicalRecord newRecord = MedicalRecord(
-      patientId: widget.patient.id!,
-      doctorId: widget.doctor.id!,
-      tanggalPeriksa: today,
-      anamnesa: _anamnesaController.text,
-      terapi: _terapiController.text,
-    );
-
-    await DatabaseHelper().insertMedicalRecord(newRecord.toMap());
-
-    _anamnesaController.clear();
-    _terapiController.clear();
-    _loadHistory();
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Rekam Medis Tersimpan")));
-  }
-
-  void _deleteRecord(int id) async {
-    await DatabaseHelper().deleteMedicalRecord(id);
-    _loadHistory();
-  }
-
-  void _showEditDialog(MedicalRecord record) {
-    final anamnesaEditCtrl = TextEditingController(text: record.anamnesa);
-    final terapiEditCtrl = TextEditingController(text: record.terapi);
-
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Edit Rekam Medis"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: anamnesaEditCtrl,
-              decoration: const InputDecoration(labelText: "Anamnesa"),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: terapiEditCtrl,
-              decoration: const InputDecoration(labelText: "Terapi"),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Batal"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Map<String, dynamic> updatedRow = {
-                'id': record.id,
-                'patient_id': record.patientId,
-                'doctor_id': record.doctorId,
-                'tanggal_periksa': record.tanggalPeriksa,
-                'anamnesa_diagnosa': anamnesaEditCtrl.text,
-                'terapi_tindakan': terapiEditCtrl.text,
-              };
-              await DatabaseHelper().updateMedicalRecord(updatedRow);
-              Navigator.pop(context);
-              _loadHistory();
-            },
-            child: const Text("Update"),
-          ),
-        ],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 20,
+                left: 20,
+                right: 20,
+              ),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.note_add_rounded, color: _primaryColor),
+                        const SizedBox(width: 10),
+                        const Text(
+                          "Tambah Rekam Medis",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    TextFormField(
+                      controller: anamnesaController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: "Anamnesa & Diagnosa",
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: terapiController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: "Terapi / Tindakan",
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                        ),
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                if (formKey.currentState!.validate()) {
+                                  setModalState(() => isSaving = true);
+
+                                  MedicalReports newRecord = MedicalReports(
+                                    id: 0,
+                                    patientId: widget.patient.id,
+                                    // GUNAKAN ID DOKTER YANG SEDANG LOGIN
+                                    doctorId: widget.user.id,
+                                    tanggalPeriksa: DateTime.now(),
+                                    anamnesaDiagnosa: anamnesaController.text,
+                                    terapiTindakan: terapiController.text,
+                                  );
+
+                                  bool success = await ApiService()
+                                      .createRecord(newRecord);
+
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    if (success) {
+                                      _loadRecords();
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("Tersimpan"),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("Gagal menyimpan"),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                        child: isSaving
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                "SIMPAN",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    bool hasAllergy =
-        widget.patient.alergiObat.isNotEmpty &&
-        widget.patient.alergiObat != '-';
-    // LOGIC UTAMA: Cek apakah user adalah dokter
-    bool isDoctor = widget.doctor.role == 'dokter';
-
     return Scaffold(
-      appBar: AppBar(title: Text("Rekam Medis: ${widget.patient.nama}")),
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: AppBar(
+        title: const Text(
+          "Riwayat Pemeriksaan",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: _primaryColor,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      // LOGIKA UTAMA: Cek apakah user adalah dokter?
+      // Jika Dokter -> Tampilkan tombol. Jika Bukan -> Null (Hilang).
+      floatingActionButton: widget.user.isDokter
+          ? FloatingActionButton.extended(
+              onPressed: _showAddRecordModal,
+              backgroundColor: _primaryColor,
+              icon: const Icon(Icons.add_comment_rounded, color: Colors.white),
+              label: const Text(
+                "Diagnosa Baru",
+                style: TextStyle(color: Colors.white),
+              ),
+            )
+          : null, // Tombol hilang untuk user/staff
+      body: Column(
         children: [
-          // --- PANEL KIRI (INPUT FORM) ---
-          // HANYA MUNCUL JIKA DOKTER
-          if (isDoctor)
-            Expanded(
-              flex: 2,
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                color: Colors.white,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildPatientInfoCard(hasAllergy),
-                    const SizedBox(height: 32),
-
-                    const Text(
-                      "Pemeriksaan Hari Ini",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal,
-                      ),
+          _buildPatientInfoCard(),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _records.isEmpty
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _loadRecords,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.only(top: 10, bottom: 80),
+                      itemCount: _records.length,
+                      itemBuilder: (context, index) =>
+                          _buildRecordCard(_records[index]),
                     ),
-                    const SizedBox(height: 16),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                    TextField(
-                      controller: _anamnesaController,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: "Anamnesa / Diagnosa / Lab",
-                        hintText: "Keluhan pasien...",
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+  // ... (Widget _buildPatientInfoCard, _buildRecordCard, _buildEmptyState SAMA SEPERTI SEBELUMNYA) ...
+  // Silakan copy paste bagian widget UI bawahnya dari kode sebelumnya agar tidak kepanjangan
+  // Bagian pentingnya ada di Class Definition & FloatingActionButton di atas.
 
-                    TextField(
-                      controller: _terapiController,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: "Terapi / Tindakan / Obat",
-                        hintText: "Resep obat...",
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.save),
-                        label: const Text("SIMPAN REKAM MEDIS"),
-                        onPressed: _saveRecord,
-                      ),
-                    ),
-                  ],
-                ),
+  Widget _buildPatientInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _primaryColor,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(30),
+          bottomRight: Radius.circular(30),
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: Colors.white,
+            child: Text(
+              widget.patient.nama[0].toUpperCase(),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: _primaryColor,
               ),
             ),
-
-          // --- PANEL KANAN (TIMELINE RIWAYAT) ---
-          // Jika User biasa, panel ini akan mengambil Full Width (Expanded flex-nya menyesuaikan)
+          ),
+          const SizedBox(width: 16),
           Expanded(
-            flex: 3,
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              color: const Color(0xFFF5F7FA), // Background abu muda
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Jika User biasa, Info Pasien muncul di atas sini karena panel kiri hilang
-                  if (!isDoctor) ...[
-                    _buildPatientInfoCard(hasAllergy),
-                    const SizedBox(height: 24),
-                  ],
-
-                  const Text(
-                    "Riwayat Pemeriksaan (Kartu Status)",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.patient.nama,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                  const SizedBox(height: 16),
-
-                  Expanded(
-                    child: _records.isEmpty
-                        ? Center(
-                            child: Text(
-                              "Belum ada riwayat medis.",
-                              style: TextStyle(color: Colors.grey[400]),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: _records.length,
-                            itemBuilder: (context, index) {
-                              final record = _records[index];
-                              return IntrinsicHeight(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Column(
-                                      children: [
-                                        Container(
-                                          width: 14,
-                                          height: 14,
-                                          decoration: const BoxDecoration(
-                                            color: Colors.teal,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Container(
-                                            width: 2,
-                                            color: Colors.teal.shade100,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 20),
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 24.0,
-                                        ),
-                                        child: Card(
-                                          elevation: 0,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            side: BorderSide(
-                                              color: Colors.grey.shade300,
-                                            ),
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(16.0),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .spaceBetween,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        const Icon(
-                                                          Icons.calendar_today,
-                                                          size: 14,
-                                                          color: Colors.teal,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Text(
-                                                          record.tanggalPeriksa,
-                                                          style:
-                                                              const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                                color:
-                                                                    Colors.teal,
-                                                                fontSize: 16,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    // Tombol Edit/Delete HANYA UNTUK DOKTER
-                                                    if (isDoctor)
-                                                      Row(
-                                                        children: [
-                                                          IconButton(
-                                                            icon: const Icon(
-                                                              Icons.edit,
-                                                              size: 18,
-                                                              color:
-                                                                  Colors.orange,
-                                                            ),
-                                                            onPressed: () =>
-                                                                _showEditDialog(
-                                                                  record,
-                                                                ),
-                                                          ),
-                                                          IconButton(
-                                                            icon: const Icon(
-                                                              Icons.delete,
-                                                              size: 18,
-                                                              color: Colors.red,
-                                                            ),
-                                                            onPressed: () =>
-                                                                _deleteRecord(
-                                                                  record.id!,
-                                                                ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                  ],
-                                                ),
-                                                const Divider(height: 24),
-                                                Row(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          Text(
-                                                            "KELUHAN & DIAGNOSA",
-                                                            style: TextStyle(
-                                                              fontSize: 11,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              color: Colors
-                                                                  .grey[600],
-                                                              letterSpacing: 1,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 4,
-                                                          ),
-                                                          Text(
-                                                            record.anamnesa,
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 15,
-                                                                  height: 1.4,
-                                                                ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 16),
-                                                    Expanded(
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          Text(
-                                                            "TERAPI & OBAT",
-                                                            style: TextStyle(
-                                                              fontSize: 11,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              color: Colors
-                                                                  .teal[700],
-                                                              letterSpacing: 1,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 4,
-                                                          ),
-                                                          Text(
-                                                            record.terapi,
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 15,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w600,
-                                                                  height: 1.4,
-                                                                ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "RM: ${widget.patient.noRm}",
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
             ),
           ),
         ],
@@ -424,66 +287,62 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
     );
   }
 
-  // Widget Info Pasien dipisah agar bisa dipakai ulang
-  Widget _buildPatientInfoCard(bool hasAllergy) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: hasAllergy ? Colors.red.shade50 : Colors.teal.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: hasAllergy ? Colors.red.shade100 : Colors.teal.shade100,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInfoRow("No RM", widget.patient.noRm),
-          _buildInfoRow("Nama", widget.patient.nama),
-          _buildInfoRow("Usia / Tgl Lahir", widget.patient.tanggalLahir),
-          const Divider(),
-          Row(
+  Widget _buildRecordCard(MedicalReports record) {
+    DateTime date =
+        DateTime.tryParse(record.tanggalPeriksa.toString()) ?? DateTime.now();
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
-                "ALERGI OBAT: ",
+              Text(
+                DateFormat('dd').format(date),
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey,
+                  color: _primaryColor,
                 ),
               ),
               Text(
-                widget.patient.alergiObat,
-                style: TextStyle(
-                  color: hasAllergy ? Colors.red : Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                DateFormat('MMM').format(date),
+                style: TextStyle(fontSize: 10, color: Colors.grey),
               ),
             ],
           ),
-        ],
+        ),
+        title: Text(
+          record.anamnesaDiagnosa ?? '-',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              record.terapiTindakan ?? '-',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "Dr. ${record.doctor?.fullName ?? '-'}",
+              style: TextStyle(
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text("$label", style: const TextStyle(color: Colors.grey)),
-          ),
-          Text(":  ", style: const TextStyle(color: Colors.grey)),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildEmptyState() => const Center(child: Text("Belum ada riwayat"));
 }

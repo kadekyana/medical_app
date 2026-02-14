@@ -1,4 +1,4 @@
-name: Build Medical App
+name: Build Medical App (Win & Android)
 
 # Trigger: Jalan otomatis setiap ada update di branch main
 on:
@@ -29,15 +29,16 @@ jobs:
       - name: Build Windows App (.exe)
         run: flutter build windows --release
 
-      # --- BAGIAN PENTING: BUNDLING DLL (Agar Portable) ---
-      # Kita copy file mesin C++ dari Windows Server ke dalam folder aplikasi
+      # --- BUNDLING DLL (Agar Portable) ---
+      # Menyertakan DLL Visual C++ agar bisa jalan di komputer yang belum install VC Redist
       - name: Bundle C++ DLLs
         run: |
           Copy-Item "C:\Windows\System32\msvcp140.dll" -Destination "build\windows\x64\runner\Release\"
           Copy-Item "C:\Windows\System32\vcruntime140.dll" -Destination "build\windows\x64\runner\Release\"
           Copy-Item "C:\Windows\System32\vcruntime140_1.dll" -Destination "build\windows\x64\runner\Release\"
+        continue-on-error: true # Lanjut jika file DLL sistem tidak ditemukan (opsional)
 
-      # Zip folder yang sudah lengkap dengan DLL
+      # Zip folder output
       - name: Compress Build Output
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath medical_app_windows.zip
@@ -48,36 +49,35 @@ jobs:
           name: windows-app-release
           path: medical_app_windows.zip
 
-  # --- JOB 2: BUILD MACOS ---
-  build-macos:
-    runs-on: macos-latest
+  # --- JOB 2: BUILD ANDROID (APK) ---
+  build-android:
+    runs-on: ubuntu-latest # Linux lebih cepat untuk build Android
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      # Android butuh Java (JDK). Versi 17 standar untuk Flutter terbaru.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: "stable"
 
-      - name: Enable Desktop Support
-        run: flutter config --enable-macos-desktop
-
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build macOS App (.app)
-        run: flutter build macos --release
+      - name: Build APK
+        run: flutter build apk --release
 
-      # Zip aplikasi macOS
-      - name: Compress App
-        run: |
-          cd build/macos/Build/Products/Release
-          zip -r medical_app_mac.zip medical_app.app
-
-      - name: Upload Artifact (Mac)
+      # Upload file APK yang sudah jadi
+      - name: Upload Artifact (Android)
         uses: actions/upload-artifact@v4
         with:
-          name: macos-app-release
-          path: build/macos/Build/Products/Release/medical_app_mac.zip
+          name: android-app-release
+          path: build/app/outputs/flutter-apk/app-release.apk

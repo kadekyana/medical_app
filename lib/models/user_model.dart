@@ -1,35 +1,55 @@
-class User {
-  final int? id;
-  final String username;
-  final String password;
-  final String role;
-  final String fullName;
+import 'dart:convert';
 
-  User({
-    this.id,
+List<Users> usersFromJson(String str) =>
+    List<Users>.from(json.decode(str).map((x) => Users.fromJson(x)));
+
+String usersToJson(List<Users> data) =>
+    json.encode(List<dynamic>.from(data.map((x) => x.toJson())));
+
+class Users {
+  int id;
+  String username;
+  String? password;
+  String role; // 'admin', 'dokter', 'user'
+  String fullName;
+  DateTime? createdAt;
+
+  Users({
+    required this.id,
     required this.username,
-    required this.password,
+    this.password,
     required this.role,
     required this.fullName,
+    this.createdAt,
   });
 
-  factory User.fromMap(Map<String, dynamic> map) {
-    return User(
-      id: map['id'],
-      username: map['username'],
-      password: map['password_hash'],
-      role: map['role'],
-      fullName: map['full_name'],
-    );
-  }
+  // --- HELPER UNTUK CEK ROLE ---
+  bool get isAdmin => role.toLowerCase() == 'admin';
+  bool get isDokter => role.toLowerCase() == 'dokter';
+  bool get isUser => role.toLowerCase() == 'user';
+  // -----------------------------
 
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'username': username,
-      'password_hash': password,
-      'role': role,
-      'full_name': fullName,
+  factory Users.fromJson(Map<String, dynamic> json) => Users(
+    id: json["id"] ?? 0,
+    username: json["username"] ?? "",
+    password: json["password"],
+    role: json["role"] ?? "user",
+    fullName: json["full_name"] ?? "",
+    createdAt: json["created_at"] != null
+        ? DateTime.tryParse(json["created_at"])
+        : null,
+  );
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> data = {
+      "username": username,
+      "role": role,
+      "full_name": fullName,
     };
+    if (id != 0) data["id"] = id;
+    if (password != null && password!.isNotEmpty) {
+      data["password"] = password;
+    }
+    return data;
   }
 }

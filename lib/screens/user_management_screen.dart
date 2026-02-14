@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/database_helper.dart';
+import 'package:medical_app/services/api_service.dart';
 import '../models/user_model.dart';
 
 class UserManagementScreen extends StatefulWidget {
@@ -10,12 +10,11 @@ class UserManagementScreen extends StatefulWidget {
 }
 
 class _UserManagementScreenState extends State<UserManagementScreen> {
-  List<User> _users = [];
+  List<Users> _users = [];
+  bool _isLoading = true;
 
-  final _usernameCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _nameCtrl = TextEditingController();
-  String _selectedRole = 'perawat';
+  // Warna Tema
+  final Color _primaryColor = const Color(0xFF1E88E5);
 
   @override
   void initState() {
@@ -24,227 +23,432 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   }
 
   void _loadUsers() async {
-    final data = await DatabaseHelper().getUsers();
-    setState(() {
-      _users = data.map((e) => User.fromMap(e)).toList();
-    });
+    setState(() => _isLoading = true);
+    final data = await ApiService().getUsers();
+    if (mounted) {
+      setState(() {
+        _users = data;
+        _isLoading = false;
+      });
+    }
   }
 
-  void _addUser() async {
-    if (_usernameCtrl.text.isEmpty || _passwordCtrl.text.isEmpty) return;
-
-    User newUser = User(
-      username: _usernameCtrl.text,
-      password: _passwordCtrl.text,
-      role: _selectedRole,
-      fullName: _nameCtrl.text,
+  // --- LOGIC HAPUS USER ---
+  void _confirmDelete(Users user) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Hapus Pengguna"),
+        content: Text(
+          "Apakah anda yakin ingin menghapus user '${user.username}'?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              bool success = await ApiService().deleteUser(user.id);
+              if (mounted) {
+                if (success) {
+                  _loadUsers();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("User berhasil dihapus"),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Gagal menghapus user"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text("Hapus", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
+  }
 
-    await DatabaseHelper().insertUser(newUser.toMap());
+  // --- LOGIC TAMBAH / EDIT USER (MODAL) ---
+  void _showUserForm({Users? user}) {
+    // Jika user != null berarti Mode Edit
+    final bool isEdit = user != null;
 
-    _usernameCtrl.clear();
-    _passwordCtrl.clear();
-    _nameCtrl.clear();
-    _loadUsers();
+    final fullNameController = TextEditingController(
+      text: isEdit ? user.fullName : '',
+    );
+    final usernameController = TextEditingController(
+      text: isEdit ? user.username : '',
+    );
+    final passwordController =
+        TextEditingController(); // Password kosong default
+    String selectedRole = isEdit ? user.role : 'user';
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("User Berhasil Ditambah")));
+    final formKey = GlobalKey<FormState>();
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 24,
+                left: 24,
+                right: 24,
+              ),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header dengan Ikon
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isEdit ? Icons.edit_note : Icons.person_add,
+                          color: _primaryColor,
+                          size: 28,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          isEdit ? "Edit Pengguna" : "Tambah Pengguna Baru",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Input Nama Lengkap
+                    TextFormField(
+                      controller: fullNameController,
+                      decoration: _inputDecoration(
+                        "Nama Lengkap",
+                        Icons.badge_outlined,
+                      ),
+                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Input Username
+                    TextFormField(
+                      controller: usernameController,
+                      decoration: _inputDecoration(
+                        "Username",
+                        Icons.person_outline,
+                      ),
+                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Input Password
+                    TextFormField(
+                      controller: passwordController,
+                      obscureText: true,
+                      decoration:
+                          _inputDecoration(
+                            isEdit ? "Password Baru (Opsional)" : "Password",
+                            Icons.lock_outline,
+                          ).copyWith(
+                            helperText: isEdit
+                                ? "Kosongkan jika tidak ingin mengganti password"
+                                : null,
+                          ),
+                      validator: (val) {
+                        // Wajib diisi jika Mode Tambah. Opsional jika Mode Edit.
+                        if (!isEdit && (val == null || val.length < 4)) {
+                          return "Minimal 4 karakter";
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Dropdown Role
+                    DropdownButtonFormField<String>(
+                      value: selectedRole,
+                      decoration: _inputDecoration(
+                        "Role Akses",
+                        Icons.security,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'admin',
+                          child: Text("Administrator"),
+                        ),
+                        DropdownMenuItem(
+                          value: 'dokter',
+                          child: Text("Dokter"),
+                        ),
+                        DropdownMenuItem(
+                          value: 'user',
+                          child: Text("Staff / User"),
+                        ),
+                      ],
+                      onChanged: (val) =>
+                          setModalState(() => selectedRole = val!),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Tombol Simpan
+                    SizedBox(
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                if (formKey.currentState!.validate()) {
+                                  setModalState(() => isSaving = true);
+
+                                  // Siapkan Data
+                                  Users userData = Users(
+                                    id: isEdit ? user.id : 0,
+                                    username: usernameController.text,
+                                    fullName: fullNameController.text,
+                                    role: selectedRole,
+                                    // Kirim password jika diisi, jika kosong kirim null/string kosong
+                                    password: passwordController.text.isNotEmpty
+                                        ? passwordController.text
+                                        : null,
+                                  );
+
+                                  bool success;
+                                  if (isEdit) {
+                                    success = await ApiService().updateUser(
+                                      user.id,
+                                      userData,
+                                    );
+                                  } else {
+                                    success = await ApiService().createUser(
+                                      userData,
+                                    );
+                                  }
+
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    if (success) {
+                                      _loadUsers();
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            isEdit
+                                                ? "User berhasil diupdate"
+                                                : "User berhasil dibuat",
+                                          ),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("Gagal menyimpan data"),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                        child: isSaving
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : Text(
+                                isEdit ? "UPDATE DATA" : "SIMPAN USER",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Manajemen Pengguna (Admin)")),
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // --- PANEL KIRI: FORM TAMBAH ---
-          Container(
-            width: 350, // Fixed width biar rapi
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(right: BorderSide(color: Colors.grey.shade200)),
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: AppBar(
+        title: const Text(
+          "Kelola Pengguna",
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: _primaryColor,
+        centerTitle: true,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _primaryColor,
+        icon: const Icon(Icons.person_add, color: Colors.white),
+        label: const Text("Tambah User", style: TextStyle(color: Colors.white)),
+        onPressed: () => _showUserForm(), // Mode Tambah
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator(color: _primaryColor))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _users.length,
+              itemBuilder: (context, index) {
+                final user = _users[index];
+                return _buildUserCard(user);
+              },
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Tambah Staff Baru",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.teal,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "Isi form di bawah untuk mendaftarkan dokter atau perawat baru.",
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-                const Divider(height: 30),
+    );
+  }
 
-                const Text(
-                  "Informasi Akun",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _usernameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Username",
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: "Password",
-                    prefixIcon: Icon(Icons.lock_outline),
-                  ),
-                ),
+  Widget _buildUserCard(Users user) {
+    bool isAdmin = user.role.toLowerCase() == 'admin';
 
-                const SizedBox(height: 20),
-                const Text(
-                  "Biodata",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Nama Lengkap",
-                    prefixIcon: Icon(Icons.badge_outlined),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: _selectedRole,
-                  decoration: const InputDecoration(
-                    labelText: "Role / Jabatan",
-                    prefixIcon: Icon(Icons.work_outline),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'dokter', child: Text("Dokter")),
-                    DropdownMenuItem(value: 'perawat', child: Text("Perawat")),
-                    DropdownMenuItem(
-                      value: 'user',
-                      child: Text("Staf Pendaftaran"),
-                    ),
-                  ],
-                  onChanged: (val) => setState(() => _selectedRole = val!),
-                ),
-                const SizedBox(height: 30),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _addUser,
-                    child: const Text("SIMPAN USER BARU"),
-                  ),
-                ),
-              ],
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shadowColor: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        leading: CircleAvatar(
+          radius: 24,
+          backgroundColor: isAdmin
+              ? Colors.orange.shade100
+              : Colors.blue.shade100,
+          child: Text(
+            user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : "U",
+            style: TextStyle(
+              color: isAdmin ? Colors.orange.shade800 : Colors.blue.shade800,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
             ),
           ),
-
-          // --- PANEL KANAN: LIST USER ---
-          Expanded(
-            child: Container(
-              color: Colors.grey[50],
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Daftar Pengguna Aktif (${_users.length})",
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: _users.length,
-                      separatorBuilder: (c, i) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final user = _users[index];
-                        // Warna avatar beda-beda sesuai role
-                        Color roleColor = user.role == 'dokter'
-                            ? Colors.teal
-                            : (user.role == 'perawat'
-                                  ? Colors.blue
-                                  : Colors.orange);
-
-                        return Card(
-                          margin: EdgeInsets.zero,
-                          elevation: 1,
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            leading: CircleAvatar(
-                              backgroundColor: roleColor.withOpacity(0.1),
-                              child: Text(
-                                user.fullName.isNotEmpty
-                                    ? user.fullName[0].toUpperCase()
-                                    : '?',
-                                style: TextStyle(
-                                  color: roleColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              user.fullName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Row(
-                              children: [
-                                Icon(
-                                  Icons.verified_user,
-                                  size: 14,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "@${user.username}  •  ${user.role.toUpperCase()}",
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.red,
-                              ),
-                              tooltip: "Hapus User",
-                              onPressed: () async {
-                                // Idealnya ada konfirmasi dialog di sini
-                                await DatabaseHelper().deleteUser(user.id!);
-                                _loadUsers();
-                              },
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+        ),
+        title: Text(
+          user.fullName,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              "@${user.username}",
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isAdmin ? Colors.orange.shade50 : Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isAdmin
+                      ? Colors.orange.shade200
+                      : Colors.green.shade200,
+                ),
+              ),
+              child: Text(
+                user.role.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: isAdmin
+                      ? Colors.orange.shade800
+                      : Colors.green.shade800,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        // Action Button: Popup Menu (Edit & Delete)
+        trailing: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) {
+            if (value == 'edit') {
+              _showUserForm(user: user); // Mode Edit
+            } else if (value == 'delete') {
+              _confirmDelete(user);
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'edit',
+              child: ListTile(
+                leading: Icon(Icons.edit, color: Colors.blue),
+                title: Text('Edit User'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              child: ListTile(
+                leading: Icon(Icons.delete, color: Colors.red),
+                title: Text('Hapus User'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: _primaryColor),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: _primaryColor, width: 2),
+      ),
+      filled: true,
+      fillColor: Colors.grey.shade50,
     );
   }
 }
