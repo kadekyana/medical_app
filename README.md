@@ -14,8 +14,8 @@ Anda dapat mengunduh versi terbaru aplikasi melalui link di bawah ini:
 
 | Platform | Link Download |
 | :--- | :--- |
-| **🤖 Android (APK)** | [**Download APK Terbaru**](https://github.com/[USERNAME]/[REPO_NAME]/releases/latest) |
-| **💻 Windows (.exe)** | [**Download Windows ZIP**](https://github.com/[USERNAME]/[REPO_NAME]/releases/latest) |
+| **🤖 Android (APK)** | [**Download APK Terbaru**](https://github.com/kadekyana/medical_app/releases/latest) |
+| **💻 Windows (.exe)** | [**Download Windows ZIP**](https://github.com/kadekyana/medical_app/releases/latest) |
 
 > *Catatan: Klik link di atas, lalu pada bagian "Assets", pilih file `.apk` untuk Android atau `.zip` untuk Windows.*
 
