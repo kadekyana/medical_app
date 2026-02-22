@@ -83,6 +83,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            tooltip: 'Refresh Data',
+            onPressed: _loadData,
+          ),
+          IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white),
             onPressed: _handleLogout,
           ),
@@ -98,11 +103,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 1. HEADER USER
                     _buildHeader(),
                     const SizedBox(height: 24),
 
-                    // 2. KARTU STATISTIK
                     Row(
                       children: [
                         _buildStatCard(
@@ -124,7 +127,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    // 3. MENU UTAMA (ROLE BASED)
                     Text(
                       "Menu Utama",
                       style: TextStyle(
@@ -138,7 +140,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                     const SizedBox(height: 32),
 
-                    // 4. PASIEN TERBARU
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -230,7 +231,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(height: 4),
-            // ROLE BADGE
+
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -327,39 +328,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- LOGIC ROLE DISINI ---
   Widget _buildQuickActionsGrid(BuildContext context) {
-    // List Menu Dinamis
     List<Widget> menuItems = [
-      // 1. DATA PASIEN (Semua Role bisa akses)
       _buildMenuButton(
         context,
         "Data Pasien",
         Icons.people_outline_rounded,
         Colors.blue,
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            // KIRIM USER DARI DASHBOARD KE LIST PASIEN
-            builder: (_) => PatientListScreen(user: widget.user),
-          ),
-        ),
+        () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PatientListScreen(user: widget.user),
+            ),
+          );
+
+          _loadData();
+        },
       ),
 
-      // 2. LAPORAN (Semua Role bisa akses - atau bisa dibatasi)
       _buildMenuButton(
         context,
         "Laporan",
         Icons.analytics_outlined,
         Colors.purple,
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ReportScreen()),
-        ),
+        () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ReportScreen()),
+          );
+          _loadData();
+        },
       ),
     ];
 
-    // 3. KELOLA USER (Hanya Admin)
     if (widget.user.isAdmin) {
       menuItems.add(
         _buildMenuButton(
@@ -367,10 +369,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           "Kelola User",
           Icons.manage_accounts_outlined,
           Colors.teal,
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const UserManagementScreen()),
-          ),
+          () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const UserManagementScreen()),
+            );
+            _loadData();
+          },
         ),
       );
     }
@@ -412,7 +417,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: color.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 32), // Ukuran Proporsional
+              child: Icon(icon, color: color, size: 32),
             ),
             const SizedBox(height: 10),
             Text(
@@ -431,7 +436,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildPatientCard(RecentPatient p) {
-    // Format Tanggal Manual (atau pakai intl jika formatnya string)
     String dateStr = p.createdAt.toIso8601String().split('T')[0];
 
     return Container(
